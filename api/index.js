@@ -4,21 +4,23 @@ const cors = require('cors');
 
 const app = express();
 
-// Cho phép CORS truy cập từ mọi domain (hoặc cấu hình domain frontend của bạn)
+// 1. CẤU HÌNH CORS CHO PHÉP MỌI HEADER VÀ METHOD (KỂ CẢ PREFLIGHT OPTIONS)
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'ngrok-skip-browser-warning']
 }));
+
+// Xử lýPreflight Request trực tiếp cho tất cả các route
+app.options('*', cors());
 
 app.use(express.json());
 
-// Trên Vercel Serverless, ghi CSDL vào thư mục /tmp hoặc dùng RAM :memory: để tránh lỗi Permission Denied
+// Trên Vercel Serverless, CSDL SQLite đặt trong thư mục tạm /tmp/
 const dbPath = process.env.VERCEL ? '/tmp/database.db' : './database.db';
 const db = new sqlite3.Database(dbPath);
 
 db.serialize(() => {
-  // Bảng Users
   db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT, 
     username TEXT UNIQUE, 
@@ -30,7 +32,6 @@ db.serialize(() => {
     last_activity_date TEXT
   )`);
   
-  // Bảng Nhật ký hoạt động
   db.run(`CREATE TABLE IF NOT EXISTS activity_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT, 
     user_id INTEGER, 
@@ -41,7 +42,6 @@ db.serialize(() => {
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`);
 
-  // Bảng Target phần thưởng
   db.run(`CREATE TABLE IF NOT EXISTS rewards (
     id INTEGER PRIMARY KEY AUTOINCREMENT, 
     title TEXT, 
@@ -51,7 +51,6 @@ db.serialize(() => {
     FOREIGN KEY(suggested_by) REFERENCES users(id)
   )`);
 
-  // Bảng Yêu cầu đổi phần thưởng
   db.run(`CREATE TABLE IF NOT EXISTS reward_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
@@ -64,7 +63,6 @@ db.serialize(() => {
     FOREIGN KEY(reward_id) REFERENCES rewards(id)
   )`);
   
-  // Tạo sẵn Admin mặc định nếu chưa có
   db.get(`SELECT COUNT(*) as count FROM users WHERE role = 'admin'`, (err, row) => {
     if (row && row.count === 0) {
       db.run(`INSERT INTO users (username, password, name, role, points, current_streak) VALUES ('admin', '123456', 'Quản Trị Viên', 'admin', 1000, 0)`);
@@ -72,7 +70,6 @@ db.serialize(() => {
   });
 });
 
-// Hàm tính toán Streak chuẩn xác
 function calculateUserStreak(userId, callback) {
   const getLocalDateStr = (dObj) => {
     const year = dObj.getFullYear();
@@ -139,7 +136,6 @@ app.get('/api', (req, res) => {
   res.json({ message: "Backend API đang hoạt động trên Vercel!" });
 });
 
-// API Đăng nhập
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
   db.get(`SELECT id, username, name, role, points, current_streak FROM users WHERE username = ? AND password = ?`, 
@@ -155,7 +151,6 @@ app.post('/api/login', (req, res) => {
   );
 });
 
-// API Admin: Lấy danh sách User
 app.get('/api/admin/users', (req, res) => {
   db.all(`SELECT id, username, name, role, points, current_streak FROM users`, [], (err, rows) => {
     if (err || !rows) return res.json([]);
@@ -174,7 +169,6 @@ app.get('/api/admin/users', (req, res) => {
   });
 });
 
-// API Admin: Tạo User mới
 app.post('/api/admin/users', (req, res) => {
   const { username, password, name, role } = req.body;
   db.run(`INSERT INTO users (username, password, name, role, points, current_streak) VALUES (?, ?, ?, ?, 0, 0)`,
@@ -186,7 +180,6 @@ app.post('/api/admin/users', (req, res) => {
   );
 });
 
-// API Admin: Cộng/trừ điểm trực tiếp
 app.post('/api/admin/adjust-points', (req, res) => {
   const { user_id, points, reason, description } = req.body;
   const numericPoints = parseInt(points) || 0;
@@ -212,7 +205,6 @@ app.post('/api/admin/adjust-points', (req, res) => {
   }
 });
 
-// API Admin: Xóa tài khoản User
 app.delete('/api/admin/users/:id', (req, res) => {
   const userId = req.params.id;
   if (parseInt(userId) === 1) {
@@ -228,7 +220,6 @@ app.delete('/api/admin/users/:id', (req, res) => {
   });
 });
 
-// API Hoạt động & Nhật ký
 app.post('/api/activities', (req, res) => {
   const { user_id, activity_name, created_at } = req.body;
   const dateStr = created_at || new Date().toISOString().split('T')[0];
@@ -267,7 +258,6 @@ app.get('/api/logs/:user_id', (req, res) => {
   });
 });
 
-// API Check-in hàng ngày
 app.post('/api/streak/check-in', (req, res) => {
   const { user_id } = req.body;
   const today = new Date().toISOString().split('T')[0];
@@ -298,7 +288,6 @@ app.post('/api/streak/check-in', (req, res) => {
   });
 });
 
-// API Bù chuỗi ngày hôm qua
 app.post('/api/streak/repair', (req, res) => {
   const { user_id } = req.body;
   const cost = 30;
@@ -328,7 +317,6 @@ app.post('/api/streak/repair', (req, res) => {
   });
 });
 
-// API Admin: Đánh dấu/xóa điểm danh
 app.post('/api/admin/toggle-checkin', (req, res) => {
   const { user_id, dateStr, action } = req.body;
 
@@ -358,7 +346,6 @@ app.post('/api/admin/toggle-checkin', (req, res) => {
   }
 });
 
-// API Phần thưởng
 app.get('/api/rewards', (req, res) => {
   db.all(`SELECT rewards.*, users.name as suggest_name FROM rewards LEFT JOIN users ON rewards.suggested_by = users.id`, [], (err, rows) => {
     res.json(rows || []);
@@ -399,7 +386,6 @@ app.delete('/api/rewards/:id', (req, res) => {
   });
 });
 
-// API Yêu cầu đổi phần thưởng
 app.post('/api/rewards/request', (req, res) => {
   const { user_id, reward_id } = req.body;
   const today = new Date().toISOString().split('T')[0];
@@ -468,7 +454,6 @@ app.post('/api/admin/reward-requests/process', (req, res) => {
   });
 });
 
-// API LẤY TÚI QUÀ ĐÃ ĐỔI THÀNH CÔNG (INVENTORY)
 app.get('/api/inventory/:user_id', (req, res) => {
   const userId = req.params.user_id;
   db.all(
@@ -485,7 +470,6 @@ app.get('/api/inventory/:user_id', (req, res) => {
   );
 });
 
-// API Lấy thông tin User theo ID
 app.get('/api/users/:user_id', (req, res) => {
   const userId = req.params.user_id;
   calculateUserStreak(userId, (computedStreak) => {
@@ -496,5 +480,4 @@ app.get('/api/users/:user_id', (req, res) => {
   });
 });
 
-// Đổ app ra cho Vercel Serverless Function
 module.exports = app;
