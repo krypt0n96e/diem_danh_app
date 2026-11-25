@@ -381,8 +381,9 @@ app.post('/api/streak/check-in', async (req, res) => {
     const newStreak = await calculateUserStreak(user_id);
     let bonusPoints = 0;
     if (newStreak === 10) bonusPoints = 50;
-    if (newStreak === 50) bonusPoints = 300;
-    if (newStreak === 100) bonusPoints = 1000;
+    if (newStreak === 30) bonusPoints = 200;
+    if (newStreak === 50) bonusPoints = 500;
+    if (newStreak === 100) bonusPoints = 1200;
 
     if (bonusPoints > 0) {
       await db.execute({
