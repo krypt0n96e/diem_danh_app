@@ -358,7 +358,7 @@ app.get('/api/logs/:user_id', async (req, res) => {
   }
 });
 
-// API Check-in hàng ngày
+// API Check-in hàng ngày (Đã cập nhật mốc thưởng: 10, 30, 50, 100 ngày)
 app.post('/api/streak/check-in', async (req, res) => {
   try {
     const { user_id } = req.body;
@@ -389,6 +389,12 @@ app.post('/api/streak/check-in', async (req, res) => {
       await db.execute({
         sql: `UPDATE users SET points = points + ? WHERE id = ?`,
         args: [bonusPoints, user_id]
+      });
+
+      // Ghi nhận lịch sử nhận thưởng mốc chuỗi vào activity_logs để hiển thị trong nhật ký
+      await db.execute({
+        sql: `INSERT INTO activity_logs (user_id, activity_name, status, points_awarded, created_at) VALUES (?, ?, 'approved', ?, ?)`,
+        args: [user_id, `Thưởng đạt mốc chuỗi ${newStreak} ngày (+${bonusPoints}đ)`, bonusPoints, today]
       });
     }
 
@@ -436,25 +442,25 @@ app.post('/api/streak/repair', async (req, res) => {
     });
 
     const newStreak = await calculateUserStreak(user_id);
-    res.json({ message: `Đã bù chuỗi thành công cho ngày ${yesterdayStr}! Chuỗi hiện tại: ${newStreak} ngày.` });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    const today = new Date().toISOString().split('T')[0];
+    let bonusPoints = 0;
+    if (newStreak === 10) bonusPoints = 50;
+    if (newStreak === 30) bonusPoints = 200;
+    if (newStreak === 50) bonusPoints = 500;
+    if (newStreak === 100) bonusPoints = 1200;
 
-// API Admin: Đánh dấu/xóa điểm danh
-app.post('/api/admin/toggle-checkin', async (req, res) => {
-  try {
-    const { user_id, dateStr, action } = req.body;
-
-    if (action === 'add') {
-      const logRes = await db.execute({
-        sql: `SELECT id FROM activity_logs WHERE user_id = ? AND created_at = ? AND (activity_name LIKE '%Check-in%' OR activity_name LIKE '%chuỗi%')`,
-        args: [user_id, dateStr]
+    if (bonusPoints > 0) {
+      await db.execute({
+        sql: `UPDATE users SET points = points + ? WHERE id = ?`,
+        args: [bonusPoints, user_id]
       });
+      await db.execute({
+        sql: `INSERT INTO activity_logs (user_id, activity_name, status, points_awarded, created_at) VALUES (?, ?, 'approved', ?, ?)`,
+        args: [user_id, `Thưởng đạt mốc chuỗi ${newStreak} ngày (+${bonusPoints}đ)`, bonusPoints, today]
+      });
+    }
 
-      if (logRes.rows.length > 0) {
-        return res.status(400).json({ error: "Ngày này đã có điểm danh rồi!" });
+    res.json({ message: `Đã bù chuỗi thành công cho ngày ${yesterdayStr}! Chuỗi hiện tại: ${newStreak} ngày.${bonusPoints > 0 ? ` Thưởng mốc chuỗi +${bonusPoints}đ!` : ''}` });
       }
 
       await db.execute({
