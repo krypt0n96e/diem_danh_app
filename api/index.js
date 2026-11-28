@@ -562,9 +562,32 @@ app.post('/api/rewards/update-points', async (req, res) => {
 
 app.delete('/api/rewards/:id', async (req, res) => {
   try {
+    const rewardId = req.params.id;
+    // Hoàn điểm lại cho các yêu cầu đổi quà đang chờ duyệt (pending) của phần thưởng này (nếu có)
+    const pendingReqs = await db.execute({
+      sql: `SELECT user_id, points_required FROM reward_requests WHERE reward_id = ? AND status = 'pending'`,
+      args: [rewardId]
+    });
+    for (const item of pendingReqs.rows) {
+      await db.execute({
+        sql: `UPDATE users SET points = points + ? WHERE id = ?`,
+        args: [item.points_required, item.user_id]
+      });
+    }
+    await db.execute({
+      sql: `DELETE FROM reward_requests WHERE reward_id = ? AND status = 'pending'`,
+      args: [rewardId]
+    });
+
+    // Ngắt khóa ngoại reward_id ở các yêu cầu đã xử lý (approved/rejected) để không làm mất vật phẩm trong Túi quà của User
+    await db.execute({
+      sql: `UPDATE reward_requests SET reward_id = NULL WHERE reward_id = ?`,
+      args: [rewardId]
+    });
+
     await db.execute({
       sql: `DELETE FROM rewards WHERE id = ?`,
-      args: [req.params.id]
+      args: [rewardId]
     });
     res.json({ message: "Đã xóa phần thưởng thành công!" });
   } catch (err) {
