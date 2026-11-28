@@ -461,6 +461,24 @@ app.post('/api/streak/repair', async (req, res) => {
     }
 
     res.json({ message: `Đã bù chuỗi thành công cho ngày ${yesterdayStr}! Chuỗi hiện tại: ${newStreak} ngày.${bonusPoints > 0 ? ` Thưởng mốc chuỗi +${bonusPoints}đ!` : ''}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API Admin: Đánh dấu/xóa điểm danh
+app.post('/api/admin/toggle-checkin', async (req, res) => {
+  try {
+    const { user_id, dateStr, action } = req.body;
+
+    if (action === 'add') {
+      const logRes = await db.execute({
+        sql: `SELECT id FROM activity_logs WHERE user_id = ? AND created_at = ? AND (activity_name LIKE '%Check-in%' OR activity_name LIKE '%chuỗi%')`,
+        args: [user_id, dateStr]
+      });
+
+      if (logRes.rows.length > 0) {
+        return res.status(400).json({ error: "Ngày này đã có điểm danh rồi!" });
       }
 
       await db.execute({
